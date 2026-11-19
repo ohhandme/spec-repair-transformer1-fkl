@@ -9,6 +9,7 @@ from pathlib import Path, PurePosixPath
 import shutil
 import subprocess
 import sys
+import tempfile
 
 
 HERE = Path(__file__).resolve().parent
@@ -45,8 +46,23 @@ def install(files):
                 raise ValueError(f"existing file has a different digest {dst}")
         else:
             dst.parent.mkdir(parents=True, exist_ok=True)
-            with dst.open("xb") as output, src.open("rb") as source:
-                shutil.copyfileobj(source, output)
+            # Publish complete bytes without replacing a concurrent install.
+            fd, temporary = tempfile.mkstemp(dir=dst.parent, prefix=dst.name + ".")
+            try:
+                with os.fdopen(fd, "wb") as output, src.open("rb") as source:
+                    shutil.copyfileobj(source, output)
+                if digest(Path(temporary)) != checksum:
+                    raise ValueError(f"copied file differs {relative}")
+                os.chmod(temporary, src.stat().st_mode & 0o777)
+                try:
+                    os.link(temporary, dst)
+                except FileExistsError:
+                    if digest(dst) != checksum:
+                        raise ValueError(f"existing file has a different digest {dst}")
+            finally:
+                Path(temporary).unlink(missing_ok=True)
+    # The frozen worker opens this lock with "a+"; its parent is not a frozen input.
+    (DATA / "a100-first-rejection-20261111-9b21f68f").mkdir(parents=True, exist_ok=True)
 
 
 def preflight(files, verify_hashes):
@@ -56,7 +72,7 @@ def preflight(files, verify_hashes):
         required[WAVE / stage / "completion.json"] = None
         required[WAVE / stage / "gpu_lease.json"] = None
     for path in (V5 / "runtime_freeze.json", V5 / "CPU_E2E_receipt.json"):
-        required[path] = None
+        required.setdefault(path, None)
     missing = [path for path in required if not path.is_file()]
     if missing:
         for path in missing[:15]:
@@ -86,9 +102,9 @@ def main():
             install(native)
         return
     freeze = read_json(HERE / "native" / V5.relative_to(DATA) / "runtime_freeze.json")
-    preflight(freeze["files"], args.verify_hashes)
+    preflight({**freeze["files"], **native}, args.verify_hashes)
     for name, expected in native.items():
-        if name.endswith(("/runtime_freeze.json", "/CPU_E2E_receipt.json")) and digest(Path(name)) != expected:
+        if (name not in freeze["files"] or name.endswith("/CPU_E2E_receipt.json")) and digest(DATA / relative_path(name)) != expected:
             raise ValueError(f"installed execution receipt differs {name}")
     if args.phase == "preflight":
         return
