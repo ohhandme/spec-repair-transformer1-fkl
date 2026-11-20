@@ -2,6 +2,7 @@
 
 import argparse
 from collections import Counter
+import exact_layout
 import hashlib
 import json
 import os
@@ -94,6 +95,7 @@ def main():
     args = parser.parse_args()
     native = read_json(HERE / "bundled-files.json")
     if args.phase in ("check-repo", "install"):
+        exact_layout.sources(HERE)
         for name, hash_value in native.items():
             if digest(HERE / "native" / relative_path(name)) != hash_value:
                 raise ValueError(f"repository file differs {name}")
@@ -108,15 +110,24 @@ def main():
             raise ValueError(f"installed execution receipt differs {name}")
     if args.phase == "preflight":
         return
+    runtime = exact_layout.prepare(HERE, V5, (HERE / "native" / V5.relative_to(DATA) / "runtime_freeze.json").read_bytes())
     environment = dict(os.environ, PYTHONPATH=str(DATA / "Spec_v2-main"))
     if args.phase in ("gate", "backfill"):
-        command = [str(V5 / "fkl_all_verified_gpu.py"), "--phase", args.phase]
+        command = [str(runtime / "fkl_all_verified_gpu.py"), "--phase", args.phase]
     elif args.phase == "eval":
-        adapter = V5.parents[1] / "standalone-single-eval" / "secondary_eval_adapter.py"
+        adapter = runtime / "secondary_eval_adapter.py"
         command = [str(adapter), "--group", cfg["group"]]
     else:
-        command = [str(V5 / "worker20.py"), "--group", cfg["group"], "--phase", args.phase]
-    subprocess.run([sys.executable, "-B", "-u", *command], cwd=V5, env=environment, check=True)
+        command = [str(runtime / "worker20.py"), "--group", cfg["group"], "--phase", args.phase]
+    subprocess.run([sys.executable, "-B", "-u", *command], cwd=runtime, env=environment, check=True)
+    if args.phase in ("gate", "backfill"):
+        terminal = read_json(runtime / "fkl" / args.phase / "completion.json")
+        if terminal.get("status") != "complete":
+            raise RuntimeError(f"{args.phase} failed: {runtime / 'fkl' / args.phase}")
+        if args.phase == "gate":
+            receipt = read_json(runtime / "fkl/gate/native_roundtrip.json")
+            if not receipt["rows"] or receipt["manifest_sha256"] != terminal["manifest_sha256"]:
+                raise ValueError("missing native teacher readback from GPU gate")
 
 
 if __name__ == "__main__":

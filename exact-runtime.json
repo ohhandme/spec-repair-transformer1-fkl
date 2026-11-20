@@ -1,0 +1,7 @@
+{
+  "fkl_all_verified_gpu.py": "f3ec5a9000e5e10c84bfbbf484307cc4a742f04c7d2b4cd7011fe67c6ce98fe3",
+  "fkl_integrity.py": "93d13f62f07ea2eed54917cb3c46b396ed129b2cdc0a132341db4869db5387d3",
+  "full_vocab_supervision.py": "5fd9b449b36cc1ba76801560329f0affc0047a7925cf779c5686b530deced80a",
+  "native_logits.py": "1b4884fc1470f412500ae9075466aeefd7498ac9f342fd06ee4422d27457a7f3",
+  "secondary_eval_adapter.py": "23b14283d6d42c211b42dc3d506f416eabee9105920ab4cc0244ea81b6b53047"
+}
